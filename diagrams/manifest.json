@@ -1,0 +1,24 @@
+{
+  "diagrams": [
+    {
+      "path": "login-sequence.yaml",
+      "title": "Login sequence",
+      "description": "UML sequence diagram — user login flow"
+    },
+    {
+      "path": "actor-ui-backend-flow.yaml",
+      "title": "Actor → UI → Backend → Microservices",
+      "description": "User flow through UI, backend API, and three microservices"
+    },
+    {
+      "path": "frontend-backend-microservices.yaml",
+      "title": "Frontend, Backend & Microservices",
+      "description": "Architecture diagram with grouped microservices"
+    },
+    {
+      "path": "sample.yaml",
+      "title": "Sample architecture",
+      "description": "API gateway, service, and database example"
+    }
+  ]
+}

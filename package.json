@@ -1,0 +1,17 @@
+{
+  "name": "diagram",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @diagram/core -w @diagram/shapes -w @diagram/mcp -w @diagram/web",
+    "dev": "npm run dev -w @diagram/web",
+    "mcp": "npm run start -w @diagram/mcp",
+    "mcp:http": "npm run start:http -w @diagram/mcp"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,223 @@
+version: "1"
+metadata:
+  title: Actor → UI → Backend → Microservices
+  tags:
+    - flowchart
+    - architecture
+shapes:
+  - id: actor
+    type: actor
+    x: 40
+    y: 160
+    width: 72
+    height: 120
+    rotation: 0
+    zIndex: 0
+    label: User
+    props: {}
+    style:
+      fill: "#ffffff"
+      stroke: "#1e293b"
+      strokeWidth: 2
+      fontSize: 14
+      fontFamily: system-ui, sans-serif
+      textColor: "#0f172a"
+    metadata:
+      role: actor
+    locked: false
+  - id: ui
+    type: client
+    x: 180
+    y: 190
+    width: 140
+    height: 80
+    rotation: 0
+    zIndex: 1
+    label: UI
+    props: {}
+    style:
+      fill: "#fef3c7"
+      stroke: "#1e293b"
+      strokeWidth: 2
+      fontSize: 14
+      fontFamily: system-ui, sans-serif
+      textColor: "#0f172a"
+    metadata:
+      role: frontend
+    locked: false
+  - id: backend
+    type: rectangle
+    x: 380
+    y: 190
+    width: 160
+    height: 80
+    rotation: 0
+    zIndex: 2
+    label: Backend
+    props: {}
+    style:
+      fill: "#dbeafe"
+      stroke: "#1e293b"
+      strokeWidth: 2
+      fontSize: 14
+      fontFamily: system-ui, sans-serif
+      textColor: "#0f172a"
+    metadata:
+      role: backend
+    locked: false
+  - id: ms-boundary
+    type: container
+    x: 600
+    y: 70
+    width: 220
+    height: 320
+    rotation: 0
+    zIndex: 3
+    label: Microservices
+    props:
+      dashed: true
+    style:
+      fill: transparent
+      stroke: "#94a3b8"
+      strokeWidth: 2
+      fontSize: 14
+      fontFamily: system-ui, sans-serif
+      textColor: "#0f172a"
+    metadata:
+      role: boundary
+    locked: false
+  - id: users-svc
+    type: rectangle
+    x: 630
+    y: 110
+    width: 160
+    height: 70
+    rotation: 0
+    zIndex: 4
+    label: Users Service
+    props: {}
+    style:
+      fill: "#ecfdf5"
+      stroke: "#1e293b"
+      strokeWidth: 2
+      fontSize: 14
+      fontFamily: system-ui, sans-serif
+      textColor: "#0f172a"
+    metadata:
+      role: microservice
+      domain: users
+    locked: false
+    groupId: microservices
+  - id: orders-svc
+    type: rectangle
+    x: 630
+    y: 200
+    width: 160
+    height: 70
+    rotation: 0
+    zIndex: 5
+    label: Orders Service
+    props: {}
+    style:
+      fill: "#ecfdf5"
+      stroke: "#1e293b"
+      strokeWidth: 2
+      fontSize: 14
+      fontFamily: system-ui, sans-serif
+      textColor: "#0f172a"
+    metadata:
+      role: microservice
+      domain: orders
+    locked: false
+    groupId: microservices
+  - id: notifications-svc
+    type: rectangle
+    x: 630
+    y: 290
+    width: 160
+    height: 70
+    rotation: 0
+    zIndex: 6
+    label: Notifications Service
+    props: {}
+    style:
+      fill: "#ecfdf5"
+      stroke: "#1e293b"
+      strokeWidth: 2
+      fontSize: 14
+      fontFamily: system-ui, sans-serif
+      textColor: "#0f172a"
+    metadata:
+      role: microservice
+      domain: notifications
+    locked: false
+    groupId: microservices
+connections:
+  - id: c-actor-ui
+    from:
+      shapeId: actor
+      portId: right
+    to:
+      shapeId: ui
+      portId: left
+    type: orthogonal
+    label: uses
+    style: {}
+    metadata: {}
+  - id: c-ui-backend
+    from:
+      shapeId: ui
+      portId: right
+    to:
+      shapeId: backend
+      portId: left
+    type: orthogonal
+    label: HTTPS
+    style: {}
+    metadata: {}
+  - id: c-backend-users
+    from:
+      shapeId: backend
+      portId: right
+    to:
+      shapeId: users-svc
+      portId: left
+    type: orthogonal
+    label: REST
+    style: {}
+    metadata: {}
+  - id: c-backend-orders
+    from:
+      shapeId: backend
+      portId: right
+    to:
+      shapeId: orders-svc
+      portId: left
+    type: orthogonal
+    label: REST
+    style: {}
+    metadata: {}
+  - id: c-backend-notifications
+    from:
+      shapeId: backend
+      portId: right
+    to:
+      shapeId: notifications-svc
+      portId: left
+    type: orthogonal
+    label: REST
+    style: {}
+    metadata: {}
+groups:
+  - id: microservices
+    label: Microservices
+    shapeIds:
+      - users-svc
+      - orders-svc
+      - notifications-svc
+    style: {}
+    metadata: {}
+viewport:
+  x: 0
+  y: 0
+  zoom: 1

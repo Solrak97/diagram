@@ -1,0 +1,196 @@
+version: "1"
+metadata:
+  title: Frontend, Backend & Microservices
+  createdAt: 2026-07-01T01:01:34.594Z
+  updatedAt: 2026-07-01T01:01:34.638Z
+  tags: []
+shapes:
+  - id: frontend
+    type: rounded-rectangle
+    x: 60
+    y: 200
+    width: 160
+    height: 80
+    rotation: 0
+    zIndex: 0
+    label: Frontend
+    props:
+      cornerRadius: 12
+    style:
+      fill: "#fef3c7"
+      stroke: "#1e293b"
+      strokeWidth: 2
+      fontSize: 14
+      fontFamily: system-ui, sans-serif
+      textColor: "#0f172a"
+    metadata:
+      role: frontend
+      stack: React
+    locked: false
+  - id: backend
+    type: rounded-rectangle
+    x: 300
+    y: 200
+    width: 180
+    height: 80
+    rotation: 0
+    zIndex: 1
+    label: Backend API
+    props:
+      cornerRadius: 12
+    style:
+      fill: "#dbeafe"
+      stroke: "#1e293b"
+      strokeWidth: 2
+      fontSize: 14
+      fontFamily: system-ui, sans-serif
+      textColor: "#0f172a"
+    metadata:
+      role: backend
+      stack: Node.js
+    locked: false
+  - id: ms-boundary
+    type: container
+    x: 560
+    y: 80
+    width: 220
+    height: 320
+    rotation: 0
+    zIndex: 2
+    label: Microservices
+    props:
+      dashed: true
+    style:
+      fill: transparent
+      stroke: "#94a3b8"
+      strokeWidth: 2
+      fontSize: 14
+      fontFamily: system-ui, sans-serif
+      textColor: "#0f172a"
+    metadata:
+      role: boundary
+    locked: false
+  - id: users-svc
+    type: rectangle
+    x: 590
+    y: 120
+    width: 160
+    height: 70
+    rotation: 0
+    zIndex: 3
+    label: Users Service
+    props: {}
+    style:
+      fill: "#ffffff"
+      stroke: "#1e293b"
+      strokeWidth: 2
+      fontSize: 14
+      fontFamily: system-ui, sans-serif
+      textColor: "#0f172a"
+    metadata:
+      role: microservice
+      domain: users
+    locked: false
+    groupId: WkQSzUDv2g
+  - id: orders-svc
+    type: rectangle
+    x: 590
+    y: 210
+    width: 160
+    height: 70
+    rotation: 0
+    zIndex: 4
+    label: Orders Service
+    props: {}
+    style:
+      fill: "#ffffff"
+      stroke: "#1e293b"
+      strokeWidth: 2
+      fontSize: 14
+      fontFamily: system-ui, sans-serif
+      textColor: "#0f172a"
+    metadata:
+      role: microservice
+      domain: orders
+    locked: false
+    groupId: WkQSzUDv2g
+  - id: notifications-svc
+    type: rectangle
+    x: 590
+    y: 300
+    width: 160
+    height: 70
+    rotation: 0
+    zIndex: 5
+    label: Notifications Service
+    props: {}
+    style:
+      fill: "#ffffff"
+      stroke: "#1e293b"
+      strokeWidth: 2
+      fontSize: 14
+      fontFamily: system-ui, sans-serif
+      textColor: "#0f172a"
+    metadata:
+      role: microservice
+      domain: notifications
+    locked: false
+    groupId: WkQSzUDv2g
+connections:
+  - id: mi20KtW383
+    from:
+      shapeId: frontend
+      portId: right
+    to:
+      shapeId: backend
+      portId: left
+    type: orthogonal
+    label: HTTPS
+    style: {}
+    metadata: {}
+  - id: 9hCsIDF4UI
+    from:
+      shapeId: backend
+      portId: right
+    to:
+      shapeId: users-svc
+      portId: left
+    type: orthogonal
+    label: REST
+    style: {}
+    metadata: {}
+  - id: QZ5_uVHxP8
+    from:
+      shapeId: backend
+      portId: right
+    to:
+      shapeId: orders-svc
+      portId: left
+    type: orthogonal
+    label: REST
+    style: {}
+    metadata: {}
+  - id: an8e0qzxaH
+    from:
+      shapeId: backend
+      portId: right
+    to:
+      shapeId: notifications-svc
+      portId: left
+    type: orthogonal
+    label: REST
+    style: {}
+    metadata: {}
+groups:
+  - id: WkQSzUDv2g
+    label: Microservices
+    shapeIds:
+      - users-svc
+      - orders-svc
+      - notifications-svc
+    style: {}
+    metadata: {}
+viewport:
+  x: 0
+  y: 0
+  zoom: 1

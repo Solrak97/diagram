@@ -1,0 +1,94 @@
+version: "1"
+metadata:
+  title: Sample architecture
+  tags:
+    - sample
+shapes:
+  - id: api
+    type: rounded-rectangle
+    x: 120
+    y: 120
+    width: 180
+    height: 80
+    rotation: 0
+    zIndex: 0
+    label: API Gateway
+    props: {}
+    style:
+      fill: "#ffffff"
+      stroke: "#1e293b"
+      strokeWidth: 2
+      fontSize: 14
+      fontFamily: system-ui, sans-serif
+      textColor: "#0f172a"
+    metadata:
+      role: gateway
+    locked: false
+  - id: svc
+    type: rectangle
+    x: 380
+    y: 120
+    width: 180
+    height: 80
+    rotation: 0
+    zIndex: 1
+    label: User Service
+    props: {}
+    style:
+      fill: "#ffffff"
+      stroke: "#1e293b"
+      strokeWidth: 2
+      fontSize: 14
+      fontFamily: system-ui, sans-serif
+      textColor: "#0f172a"
+    metadata:
+      role: service
+    locked: false
+  - id: db
+    type: cylinder
+    x: 380
+    y: 280
+    width: 120
+    height: 120
+    rotation: 0
+    zIndex: 2
+    label: Postgres
+    props: {}
+    style:
+      fill: "#e0f2fe"
+      stroke: "#1e293b"
+      strokeWidth: 2
+      fontSize: 14
+      fontFamily: system-ui, sans-serif
+      textColor: "#0f172a"
+    metadata:
+      role: database
+    locked: false
+connections:
+  - id: c1
+    from:
+      shapeId: api
+      portId: right
+    to:
+      shapeId: svc
+      portId: left
+    type: orthogonal
+    label: REST
+    style: {}
+    metadata: {}
+  - id: c2
+    from:
+      shapeId: svc
+      portId: bottom
+    to:
+      shapeId: db
+      portId: top
+    type: orthogonal
+    label: ""
+    style: {}
+    metadata: {}
+groups: []
+viewport:
+  x: 0
+  y: 0
+  zoom: 1

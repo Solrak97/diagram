@@ -1,0 +1,851 @@
+import {
+  type DiagramDocument,
+  addShape,
+  connectShapes,
+  createEmptyDiagram,
+  defaultShapeRegistry,
+  disconnectShapes,
+  importDocument,
+  removeShape,
+  serializeDiagram,
+  updateShape,
+  updateViewport,
+  touchDocument,
+} from "@diagram/core";
+import "@diagram/shapes";
+import { palettePanels } from "@diagram/shapes";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DiagramCanvas } from "./components/DiagramCanvas";
+import { ShapePalette } from "./components/ShapePalette";
+import { Toolbar } from "./components/Toolbar";
+import { LineFormatBar } from "./components/LineFormatBar";
+import type { ExportAction } from "./components/ExportMenu";
+import type { EditorTool, PendingConnection } from "./types/editor";
+import { useDiagramHistory } from "./hooks/useDiagramHistory";
+import {
+  diagramToClient,
+  getPinchZoomFactor,
+  getWheelPanDelta,
+  isPinchZoomWheel,
+  ZOOM_STEP,
+  zoomViewportByFactor,
+} from "./utils/canvas";
+import {
+  exportDiagramJpeg,
+  exportDiagramPng,
+  exportDiagramText,
+} from "./utils/export";
+import {
+  type DocumentSource,
+  fetchLibraryDiagram,
+  isBlankDocument,
+  readDiagramFile,
+} from "./utils/load";
+import type { LibraryDiagramEntry } from "./utils/load";
+import {
+  getLineStyle,
+  getLinePathPoints,
+  initializeLineShapePoints,
+  insertPivotAtPoint,
+  isLineShape,
+  removePivotAtIndex,
+  syncShapeFromLinePoints,
+  type LinePoint,
+  type LineStyle,
+  translateLinePoints,
+} from "./utils/lines";
+import {
+  loadStoredDocument,
+  loadStoredSource,
+  saveStoredDocument,
+  saveStoredSource,
+} from "./utils/storage";
+
+function loadInitialDocument(): DiagramDocument {
+  return createEmptyDiagram({
+    metadata: { title: "Untitled diagram", tags: [] },
+  });
+}
+
+export function App() {
+  const {
+    document,
+    canUndo,
+    canRedo,
+    mutate,
+    mutateViewport,
+    replaceDocument,
+    undo,
+    redo,
+  } = useDiagramHistory(loadStoredDocument() ?? loadInitialDocument());
+  const [documentSource, setDocumentSource] = useState<DocumentSource | null>(
+    () => loadStoredSource(),
+  );
+  const [fileBusy, setFileBusy] = useState(false);
+  const [tool, setTool] = useState<EditorTool>("select");
+  const [activeShapeType, setActiveShapeType] = useState("rounded-rectangle");
+  const [selectedShapeIds, setSelectedShapeIds] = useState<string[]>([]);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(
+    null,
+  );
+  const [pendingConnection, setPendingConnection] =
+    useState<PendingConnection | null>(null);
+  const [editingShapeId, setEditingShapeId] = useState<string | null>(null);
+  const [labelDraft, setLabelDraft] = useState("");
+  const canvasShellRef = useRef<HTMLDivElement>(null);
+  const canvasAreaRef = useRef<HTMLDivElement>(null);
+  const canvasSvgRef = useRef<SVGSVGElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputModeRef = useRef<"open" | "import">("open");
+  const [exportBusy, setExportBusy] = useState(false);
+  const [selectedLinePivotIndex, setSelectedLinePivotIndex] = useState<
+    number | null
+  >(null);
+
+  useEffect(() => {
+    setSelectedLinePivotIndex(null);
+  }, [selectedShapeIds]);
+
+  const applyDocument = useCallback(
+    (next: DiagramDocument, source: DocumentSource | null) => {
+      replaceDocument(next);
+      setDocumentSource(source);
+      setSelectedShapeIds([]);
+      setSelectedConnectionId(null);
+      setPendingConnection(null);
+      setEditingShapeId(null);
+      setSelectedLinePivotIndex(null);
+      saveStoredDocument(next);
+      saveStoredSource(source);
+    },
+    [replaceDocument],
+  );
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      saveStoredDocument(document);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [document]);
+
+  useEffect(() => {
+    saveStoredSource(documentSource);
+  }, [documentSource]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function bootstrap() {
+      const openParam = new URLSearchParams(window.location.search).get("open");
+      if (openParam) {
+        try {
+          const doc = await fetchLibraryDiagram(openParam);
+          if (cancelled) return;
+          applyDocument(doc, {
+            kind: "library",
+            path: openParam,
+            label: doc.metadata.title,
+          });
+          const url = new URL(window.location.href);
+          url.searchParams.delete("open");
+          window.history.replaceState({}, "", url);
+          return;
+        } catch (error) {
+          console.error("Failed to open diagram from URL", error);
+        }
+      }
+
+      const stored = loadStoredDocument();
+      if (stored && !isBlankDocument(stored)) {
+        return;
+      }
+
+      try {
+        const doc = await fetchLibraryDiagram("login-sequence.yaml");
+        if (cancelled) return;
+        applyDocument(doc, {
+          kind: "library",
+          path: "login-sequence.yaml",
+          label: doc.metadata.title,
+        });
+      } catch (error) {
+        console.error("Failed to load default diagram", error);
+      }
+    }
+
+    void bootstrap();
+    return () => {
+      cancelled = true;
+    };
+  }, [applyDocument]);
+
+  const selectedShape =
+    selectedShapeIds.length === 1
+      ? document.shapes.find((shape) => shape.id === selectedShapeIds[0])
+      : undefined;
+  const selectedLineShape =
+    selectedShape && isLineShape(selectedShape.type) ? selectedShape : undefined;
+  const multiSelectCount = selectedShapeIds.length;
+  const selectedConnection = document.connections.find(
+    (connection) => connection.id === selectedConnectionId,
+  );
+  const editingShape = document.shapes.find((shape) => shape.id === editingShapeId);
+
+  const applyZoom = useCallback(
+    (focalClientX: number, focalClientY: number, factor: number) => {
+      const area = canvasAreaRef.current?.getBoundingClientRect();
+      if (!area) return;
+
+      mutateViewport((current) =>
+        updateViewport(
+          current,
+          zoomViewportByFactor(
+            current.viewport,
+            factor,
+            focalClientX,
+            focalClientY,
+            area,
+          ),
+        ),
+      );
+    },
+    [mutateViewport],
+  );
+
+  const handleZoomIn = useCallback(() => {
+    const area = canvasAreaRef.current?.getBoundingClientRect();
+    if (!area) return;
+    applyZoom(area.left + area.width / 2, area.top + area.height / 2, ZOOM_STEP);
+  }, [applyZoom]);
+
+  const handleZoomOut = useCallback(() => {
+    const area = canvasAreaRef.current?.getBoundingClientRect();
+    if (!area) return;
+    applyZoom(
+      area.left + area.width / 2,
+      area.top + area.height / 2,
+      1 / ZOOM_STEP,
+    );
+  }, [applyZoom]);
+
+  const handleZoomReset = useCallback(() => {
+    mutateViewport((current) => updateViewport(current, { zoom: 1, x: 0, y: 0 }));
+  }, [mutateViewport]);
+
+  const handleExport = useCallback(
+    async (action: ExportAction) => {
+      try {
+        setExportBusy(true);
+        if (action === "yaml") {
+          exportDiagramText(
+            serializeDiagram(document, "yaml"),
+            document,
+            "yaml",
+          );
+          return;
+        }
+        if (action === "json") {
+          exportDiagramText(
+            serializeDiagram(document, "json"),
+            document,
+            "json",
+          );
+          return;
+        }
+
+        const svg = canvasSvgRef.current;
+        if (!svg) return;
+
+        if (action === "png") {
+          await exportDiagramPng(svg, document);
+        } else {
+          await exportDiagramJpeg(svg, document);
+        }
+      } catch (error) {
+        console.error("Export failed", error);
+        window.alert("Export failed. Try again.");
+      } finally {
+        setExportBusy(false);
+      }
+    },
+    [document],
+  );
+
+  const handleDelete = useCallback(() => {
+    if (
+      selectedLineShape &&
+      selectedLinePivotIndex !== null &&
+      selectedShapeIds.length === 1
+    ) {
+      const points = removePivotAtIndex(
+        getLinePathPoints(selectedLineShape),
+        selectedLinePivotIndex,
+      );
+      if (points.length !== getLinePathPoints(selectedLineShape).length) {
+        mutate((current) => {
+          const nextShape = syncShapeFromLinePoints(selectedLineShape, points);
+          return updateShape(current, selectedLineShape.id, {
+            x: nextShape.x,
+            y: nextShape.y,
+            width: nextShape.width,
+            height: nextShape.height,
+            props: nextShape.props,
+          });
+        });
+        setSelectedLinePivotIndex(null);
+        return;
+      }
+    }
+
+    if (selectedShapeIds.length > 0) {
+      const ids = [...selectedShapeIds];
+      mutate((current) =>
+        ids.reduce((doc, id) => removeShape(doc, id), current),
+      );
+      setSelectedShapeIds([]);
+      setSelectedLinePivotIndex(null);
+      return;
+    }
+    if (selectedConnectionId) {
+      const id = selectedConnectionId;
+      mutate((current) => disconnectShapes(current, id));
+      setSelectedConnectionId(null);
+    }
+  }, [
+    mutate,
+    selectedConnectionId,
+    selectedLinePivotIndex,
+    selectedLineShape,
+    selectedShapeIds,
+  ]);
+
+  const handleToggleShape = useCallback((shapeId: string) => {
+    setSelectedShapeIds((current) =>
+      current.includes(shapeId)
+        ? current.filter((id) => id !== shapeId)
+        : [...current, shapeId],
+    );
+    setSelectedConnectionId(null);
+  }, []);
+
+  const handleConnectPick = useCallback(
+    (shapeId: string, portId?: string) => {
+      if (!pendingConnection) {
+        setPendingConnection({ shapeId, portId });
+        return;
+      }
+
+      if (pendingConnection.shapeId === shapeId) {
+        setPendingConnection(null);
+        return;
+      }
+
+      mutate((current) =>
+        connectShapes(current, {
+          fromShapeId: pendingConnection.shapeId,
+          toShapeId: shapeId,
+          fromPortId: pendingConnection.portId,
+          toPortId: portId,
+          type: "orthogonal",
+        }),
+      );
+      setPendingConnection(null);
+      setTool("select");
+    },
+    [mutate, pendingConnection],
+  );
+
+  const handleCreateShape = useCallback(
+    (
+      bounds: { x: number; y: number; width: number; height: number },
+      type: string,
+    ) => {
+      const definition = defaultShapeRegistry.get(type);
+      const label =
+        type === "text"
+          ? "Label"
+          : (definition?.label ?? type.replace(/-/g, " "));
+
+      mutate((current) => {
+        let next = addShape(current, defaultShapeRegistry, {
+          type,
+          x: bounds.x,
+          y: bounds.y,
+          width: bounds.width,
+          height: bounds.height,
+          label,
+        });
+        const created = next.shapes[next.shapes.length - 1];
+        if (created && isLineShape(type)) {
+          const initialized = initializeLineShapePoints(created);
+          next = {
+            ...next,
+            shapes: next.shapes.map((shape) =>
+              shape.id === created.id ? initialized : shape,
+            ),
+          };
+        }
+        if (created) {
+          setSelectedShapeIds([created.id]);
+          setSelectedLinePivotIndex(null);
+        }
+        return next;
+      });
+
+      if (type === "text") {
+        setTool("select");
+      }
+    },
+    [mutate],
+  );
+
+  const handleUpdateLinePoints = useCallback(
+    (shapeId: string, points: LinePoint[]) => {
+      mutate((current) => {
+        const shape = current.shapes.find((item) => item.id === shapeId);
+        if (!shape) return current;
+        const nextShape = syncShapeFromLinePoints(shape, points);
+        return updateShape(current, shapeId, {
+          x: nextShape.x,
+          y: nextShape.y,
+          width: nextShape.width,
+          height: nextShape.height,
+          props: nextShape.props,
+        });
+      });
+    },
+    [mutate],
+  );
+
+  const handleAddLinePivot = useCallback(
+    (shapeId: string, x: number, y: number) => {
+      mutate((current) => {
+        const shape = current.shapes.find((item) => item.id === shapeId);
+        if (!shape || !isLineShape(shape.type)) return current;
+        const points = insertPivotAtPoint(getLinePathPoints(shape), x, y);
+        const nextShape = syncShapeFromLinePoints(shape, points);
+        return updateShape(current, shapeId, {
+          x: nextShape.x,
+          y: nextShape.y,
+          width: nextShape.width,
+          height: nextShape.height,
+          props: nextShape.props,
+        });
+      });
+    },
+    [mutate],
+  );
+
+  const handleLineStyleChange = useCallback(
+    (lineStyle: LineStyle) => {
+      if (!selectedLineShape) return;
+      mutate((current) =>
+        updateShape(current, selectedLineShape.id, {
+          props: {
+            ...selectedLineShape.props,
+            lineStyle,
+          },
+        }),
+      );
+    },
+    [mutate, selectedLineShape],
+  );
+
+  const commitLabelEdit = useCallback(() => {
+    if (!editingShapeId) return;
+    mutate((current) =>
+      updateShape(current, editingShapeId, { label: labelDraft }),
+    );
+    setEditingShapeId(null);
+  }, [editingShapeId, labelDraft, mutate]);
+
+  const handleOpenFile = useCallback(() => {
+    fileInputModeRef.current = "open";
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleImportFile = useCallback(() => {
+    fileInputModeRef.current = "import";
+    fileInputRef.current?.click();
+  }, []);
+
+  const importIntoDocument = useCallback(
+    (source: DiagramDocument) => {
+      let importedShapeIds: string[] = [];
+      mutate((current) => {
+        const result = importDocument(current, source);
+        importedShapeIds = result.importedShapeIds;
+        return result.document;
+      });
+      if (importedShapeIds.length > 0) {
+        setSelectedShapeIds(importedShapeIds);
+        setSelectedConnectionId(null);
+      }
+    },
+    [mutate],
+  );
+
+  const handleFileInputChange = useCallback(
+    async (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+      if (!file) return;
+
+      const mode = fileInputModeRef.current;
+
+      try {
+        setFileBusy(true);
+        const doc = await readDiagramFile(file);
+        if (mode === "open") {
+          applyDocument(doc, {
+            kind: "file",
+            path: file.name,
+            label: file.name,
+          });
+          return;
+        }
+
+        importIntoDocument(doc);
+      } catch (error) {
+        console.error(`Failed to ${mode} diagram file`, error);
+        window.alert(
+          mode === "open"
+            ? "Could not open diagram file. Use JSON or YAML."
+            : "Could not import diagram file. Use JSON or YAML.",
+        );
+      } finally {
+        setFileBusy(false);
+      }
+    },
+    [applyDocument, importIntoDocument],
+  );
+
+  const handleOpenLibrary = useCallback(
+    async (entry: LibraryDiagramEntry) => {
+      try {
+        setFileBusy(true);
+        const doc = await fetchLibraryDiagram(entry.path);
+        applyDocument(doc, {
+          kind: "library",
+          path: entry.path,
+          label: entry.title,
+        });
+      } catch (error) {
+        console.error("Failed to open library diagram", error);
+        window.alert("Could not open diagram from library.");
+      } finally {
+        setFileBusy(false);
+      }
+    },
+    [applyDocument],
+  );
+
+  const handleImportLibrary = useCallback(
+    async (entry: LibraryDiagramEntry) => {
+      try {
+        setFileBusy(true);
+        const doc = await fetchLibraryDiagram(entry.path);
+        importIntoDocument(doc);
+      } catch (error) {
+        console.error("Failed to import library diagram", error);
+        window.alert("Could not import diagram from library.");
+      } finally {
+        setFileBusy(false);
+      }
+    },
+    [importIntoDocument],
+  );
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
+      const key = event.key.toLowerCase();
+      const mod = event.metaKey || event.ctrlKey;
+      if (mod && key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        undo();
+        return;
+      }
+      if (mod && (key === "y" || (key === "z" && event.shiftKey))) {
+        event.preventDefault();
+        redo();
+        return;
+      }
+
+      if (key === "v") setTool("select");
+      if (key === "m") setTool("multiselect");
+      if (key === "h") setTool("pan");
+      if (key === "s") setTool("shape");
+      if (key === "t") setTool("text");
+      if (key === "c") {
+        setTool("connect");
+        setPendingConnection(null);
+      }
+      if (key === "escape") {
+        setPendingConnection(null);
+        setEditingShapeId(null);
+        setSelectedShapeIds([]);
+        setSelectedConnectionId(null);
+      }
+      if (key === "delete" || key === "backspace") {
+        event.preventDefault();
+        handleDelete();
+      }
+      if (key === "=" || key === "+") {
+        event.preventDefault();
+        handleZoomIn();
+      }
+      if (key === "-") {
+        event.preventDefault();
+        handleZoomOut();
+      }
+      if (key === "0") {
+        event.preventDefault();
+        handleZoomReset();
+      }
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [handleDelete, handleZoomIn, handleZoomOut, handleZoomReset, redo, undo]);
+
+  useEffect(() => {
+    const area = canvasAreaRef.current;
+    if (!area) return;
+
+    const el = area;
+
+    function onWheel(event: WheelEvent) {
+      const rect = el.getBoundingClientRect();
+      event.preventDefault();
+
+      if (isPinchZoomWheel(event)) {
+        const factor = getPinchZoomFactor(event);
+        mutateViewport((current) =>
+          updateViewport(
+            current,
+            zoomViewportByFactor(
+              current.viewport,
+              factor,
+              event.clientX,
+              event.clientY,
+              rect,
+            ),
+          ),
+        );
+        return;
+      }
+
+      const { dx, dy } = getWheelPanDelta(event);
+      if (dx === 0 && dy === 0) return;
+
+      mutateViewport((current) =>
+        updateViewport(current, {
+          x: current.viewport.x - dx,
+          y: current.viewport.y - dy,
+        }),
+      );
+    }
+
+    area.addEventListener("wheel", onWheel, { passive: false });
+    return () => area.removeEventListener("wheel", onWheel);
+  }, [mutateViewport]);
+
+  const inlineEditStyle = useMemo(() => {
+    if (!editingShape || !canvasShellRef.current) return null;
+    const rect = canvasShellRef.current.getBoundingClientRect();
+    const topLeft = diagramToClient(
+      editingShape.x,
+      editingShape.y,
+      rect,
+      document.viewport,
+    );
+    const width = editingShape.width * document.viewport.zoom;
+    const height = editingShape.height * document.viewport.zoom;
+
+    return {
+      left: topLeft.x,
+      top: topLeft.y,
+      width,
+      height,
+      fontSize: (editingShape.style.fontSize ?? 14) * document.viewport.zoom,
+    };
+  }, [document.viewport, editingShape]);
+
+  return (
+    <div className="app">
+      <ShapePalette
+        panels={palettePanels}
+        registry={defaultShapeRegistry}
+        activeShapeType={activeShapeType}
+        tool={tool}
+        onSelectShapeType={setActiveShapeType}
+        onArmShapeTool={() => setTool("shape")}
+        onArmTextTool={() => setTool("text")}
+      />
+
+      <main className="canvas-shell" ref={canvasShellRef}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json,.yaml,.yml,application/json,text/yaml"
+          hidden
+          onChange={handleFileInputChange}
+        />
+
+        <Toolbar
+          tool={tool}
+          onToolChange={(next) => {
+            setTool(next);
+            if (next !== "connect") setPendingConnection(null);
+          }}
+          onOpenFile={handleOpenFile}
+          onOpenLibrary={handleOpenLibrary}
+          onImportFile={handleImportFile}
+          onImportLibrary={handleImportLibrary}
+          fileBusy={fileBusy}
+          onZoomIn={handleZoomIn}
+          onZoomOut={handleZoomOut}
+          onZoomReset={handleZoomReset}
+          onUndo={undo}
+          onRedo={redo}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onExport={handleExport}
+          exportBusy={exportBusy}
+          zoom={document.viewport.zoom}
+          shapeCount={document.shapes.length}
+          connectionCount={document.connections.length}
+          title={document.metadata.title}
+          onTitleChange={(title) => {
+            mutate((current) =>
+              touchDocument({
+                ...current,
+                metadata: { ...current.metadata, title },
+              }),
+            );
+          }}
+          sourceLabel={documentSource?.label}
+          selectionLabel={
+            multiSelectCount > 1
+              ? `${multiSelectCount} shapes selected`
+              : (selectedShape?.label ??
+                selectedConnection?.label ??
+                (pendingConnection ? "pick target shape" : undefined))
+          }
+          lineFormatControls={
+            selectedLineShape ? (
+              <LineFormatBar
+                lineStyle={getLineStyle(selectedLineShape)}
+                onChange={handleLineStyleChange}
+              />
+            ) : null
+          }
+        />
+
+        <div className="canvas-area" ref={canvasAreaRef}>
+          <DiagramCanvas
+            ref={canvasSvgRef}
+            document={document}
+            tool={tool}
+            activeShapeType={activeShapeType}
+            selectedShapeIds={selectedShapeIds}
+            selectedConnectionId={selectedConnectionId}
+            pendingConnection={pendingConnection}
+            onSetSelection={setSelectedShapeIds}
+            onToggleShape={handleToggleShape}
+            onSelectConnection={setSelectedConnectionId}
+            onMoveShape={(id, x, y) => {
+              mutate((current) => {
+                const shape = current.shapes.find((item) => item.id === id);
+                if (!shape) return current;
+                if (isLineShape(shape.type)) {
+                  const dx = x - shape.x;
+                  const dy = y - shape.y;
+                  const next = translateLinePoints({ ...shape, x, y }, dx, dy);
+                  return updateShape(current, id, {
+                    x: next.x,
+                    y: next.y,
+                    width: next.width,
+                    height: next.height,
+                    props: next.props,
+                  });
+                }
+                return updateShape(current, id, { x, y });
+              });
+            }}
+            onMoveShapes={(updates) => {
+              mutate((current) =>
+                updates.reduce((doc, update) => {
+                  const shape = doc.shapes.find((item) => item.id === update.id);
+                  if (!shape) return doc;
+                  if (isLineShape(shape.type)) {
+                    const dx = update.x - shape.x;
+                    const dy = update.y - shape.y;
+                    const next = translateLinePoints(
+                      { ...shape, x: update.x, y: update.y },
+                      dx,
+                      dy,
+                    );
+                    return updateShape(doc, update.id, {
+                      x: next.x,
+                      y: next.y,
+                      width: next.width,
+                      height: next.height,
+                      props: next.props,
+                    });
+                  }
+                  return updateShape(doc, update.id, {
+                    x: update.x,
+                    y: update.y,
+                  });
+                }, current),
+              );
+            }}
+            onResizeShape={(id, bounds) => {
+              mutate((current) => updateShape(current, id, bounds));
+            }}
+            onPan={(x, y) => {
+              mutateViewport((current) => updateViewport(current, { x, y }));
+            }}
+            onCreateShape={handleCreateShape}
+            onConnectPick={handleConnectPick}
+            onEditLabel={(shapeId) => {
+              const shape = document.shapes.find((item) => item.id === shapeId);
+              if (!shape) return;
+              setEditingShapeId(shapeId);
+              setLabelDraft(shape.label ?? "");
+            }}
+            onUpdateLinePoints={handleUpdateLinePoints}
+            onAddLinePivot={handleAddLinePivot}
+            selectedLinePivotIndex={selectedLinePivotIndex}
+            onSelectLinePivot={setSelectedLinePivotIndex}
+          />
+
+          {editingShape && inlineEditStyle ? (
+            <input
+              className="inline-label-edit"
+              style={inlineEditStyle}
+              value={labelDraft}
+              autoFocus
+              onChange={(event) => setLabelDraft(event.target.value)}
+              onBlur={commitLabelEdit}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") commitLabelEdit();
+                if (event.key === "Escape") setEditingShapeId(null);
+              }}
+            />
+          ) : null}
+        </div>
+      </main>
+    </div>
+  );
+}
