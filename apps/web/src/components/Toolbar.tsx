@@ -1,11 +1,8 @@
 import type { ExportAction } from "./ExportMenu";
-import { ExportMenu } from "./ExportMenu";
-import { ImportMenu } from "./ImportMenu";
-import { OpenMenu } from "./OpenMenu";
 import type { EditorTool } from "../types/editor";
-import type { LibraryDiagramEntry } from "../utils/load";
 import {
   ConnectIcon,
+  DrawIcon,
   MultiselectIcon,
   PanIcon,
   RedoIcon,
@@ -16,16 +13,10 @@ import {
   ZoomInIcon,
   ZoomOutIcon,
 } from "./ToolbarIcons";
-import { ToolbarTitle } from "./ToolbarTitle";
 
 interface ToolbarProps {
   tool: EditorTool;
   onToolChange: (tool: EditorTool) => void;
-  onOpenFile: () => void;
-  onOpenLibrary: (entry: LibraryDiagramEntry) => void;
-  onImportFile: () => void;
-  onImportLibrary: (entry: LibraryDiagramEntry) => void;
-  fileBusy?: boolean;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onZoomReset: () => void;
@@ -33,15 +24,7 @@ interface ToolbarProps {
   onRedo: () => void;
   canUndo?: boolean;
   canRedo?: boolean;
-  onExport: (action: ExportAction) => void;
-  exportBusy?: boolean;
   zoom: number;
-  shapeCount: number;
-  connectionCount: number;
-  title: string;
-  onTitleChange: (title: string) => void;
-  sourceLabel?: string;
-  selectionLabel?: string;
   lineFormatControls?: React.ReactNode;
 }
 
@@ -76,6 +59,12 @@ const TOOLS: {
     icon: <ShapeIcon />,
   },
   {
+    id: "draw",
+    label: "Draw",
+    title: "Freehand vector draw (D)",
+    icon: <DrawIcon />,
+  },
+  {
     id: "text",
     label: "Text",
     title: "Place text labels (T)",
@@ -92,11 +81,6 @@ const TOOLS: {
 export function Toolbar({
   tool,
   onToolChange,
-  onOpenFile,
-  onOpenLibrary,
-  onImportFile,
-  onImportLibrary,
-  fileBusy = false,
   onZoomIn,
   onZoomOut,
   onZoomReset,
@@ -104,23 +88,11 @@ export function Toolbar({
   onRedo,
   canUndo = false,
   canRedo = false,
-  onExport,
-  exportBusy = false,
   zoom,
-  shapeCount,
-  connectionCount,
-  title,
-  onTitleChange,
-  sourceLabel,
-  selectionLabel,
   lineFormatControls,
 }: ToolbarProps) {
   return (
     <div className="toolbar">
-      <ToolbarTitle title={title} onChange={onTitleChange} />
-
-      <div className="tool-divider" />
-
       <div className="tool-group" role="toolbar" aria-label="Drawing tools">
         {TOOLS.map((item) => (
           <button
@@ -199,30 +171,8 @@ export function Toolbar({
           {lineFormatControls}
         </>
       ) : null}
-
-      <div className="tool-divider" />
-
-      <OpenMenu
-        onOpenFile={onOpenFile}
-        onOpenLibrary={onOpenLibrary}
-        busy={fileBusy}
-      />
-
-      <ImportMenu
-        onImportFile={onImportFile}
-        onImportLibrary={onImportLibrary}
-        busy={fileBusy}
-      />
-
-      <ExportMenu onExport={onExport} busy={exportBusy} />
-
-      <span className="spacer" />
-
-      <span className="status">
-        {shapeCount} shapes · {connectionCount} connections
-        {sourceLabel ? ` · ${sourceLabel}` : ""}
-        {selectionLabel ? ` · ${selectionLabel}` : ""}
-      </span>
     </div>
   );
 }
+
+export type { ExportAction };

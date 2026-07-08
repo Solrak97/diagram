@@ -54,6 +54,15 @@ export function ShapeIcon(props: IconProps) {
   );
 }
 
+export function DrawIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M4 16c2-4 4-6 7-6 2.5 0 3.5 2 5.5 2 1.7 0 2.7-1.1 3.5-3" />
+      <path d="M16.5 7.5l1-1a1.8 1.8 0 112.5 2.5l-1 1" />
+    </IconBase>
+  );
+}
+
 export function TextIcon(props: IconProps) {
   return (
     <IconBase {...props}>

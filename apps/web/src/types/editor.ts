@@ -3,6 +3,7 @@ export type EditorTool =
   | "multiselect"
   | "pan"
   | "shape"
+  | "draw"
   | "text"
   | "connect";
 
@@ -20,6 +21,7 @@ export interface Bounds {
 
 export type InteractionState =
   | { kind: "create"; shapeType: string; bounds: Bounds }
+  | { kind: "freehand"; points: { x: number; y: number }[] }
   | { kind: "move"; shapeId: string; x: number; y: number }
   | {
       kind: "move-multiple";

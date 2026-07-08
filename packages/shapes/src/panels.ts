@@ -17,6 +17,7 @@ export const palettePanels: PalettePanel[] = [
     defaultOpen: true,
     items: [
       { type: "text" },
+      { type: "freehand", label: "Draw" },
       { type: "rectangle" },
       { type: "rounded-rectangle" },
       { type: "ellipse" },

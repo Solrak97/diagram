@@ -19,6 +19,8 @@ import {
   updateShape,
   updateViewport,
   DiagramError,
+  mutateActivePage,
+  normalizeDocument,
 } from "@diagram/core";
 import "@diagram/shapes";
 
@@ -84,8 +86,8 @@ export class DiagramStore {
     relativePath: string,
     mutator: (document: DiagramDocument) => DiagramDocument,
   ): Promise<DiagramDocument> {
-    const current = await this.read(relativePath);
-    const next = mutator(current);
+    const current = normalizeDocument(await this.read(relativePath));
+    const next = mutateActivePage(current, mutator);
     await this.write(relativePath, next);
     return next;
   }

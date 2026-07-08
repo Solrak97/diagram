@@ -7,8 +7,16 @@ export interface LinePoint {
   y: number;
 }
 
+export function isFreehandShape(type: string): boolean {
+  return type === "freehand";
+}
+
 export function isLineShape(type: string): boolean {
   return type === "arrow-line" || type === "uml-seq-message";
+}
+
+export function isPointPathShape(type: string): boolean {
+  return isLineShape(type) || isFreehandShape(type);
 }
 
 export function isHorizontalLine(shape: Shape): boolean {
@@ -42,6 +50,16 @@ export function getLinePathPoints(shape: Shape): LinePoint[] {
     return shape.props.points as LinePoint[];
   }
   return getDefaultLineEndpoints(shape);
+}
+
+export function getShapePathPoints(shape: Shape): LinePoint[] {
+  if (isLineShape(shape.type)) {
+    return getLinePathPoints(shape);
+  }
+  if (isFreehandShape(shape.type) && hasLinePoints(shape)) {
+    return shape.props.points as LinePoint[];
+  }
+  return [];
 }
 
 export function getLineStyle(shape: Shape): LineStyle {
@@ -97,11 +115,42 @@ export function syncShapeFromLinePoints(
   };
 }
 
+export function syncShapeFromPathPoints(shape: Shape, points: LinePoint[]): Shape {
+  const bounds = boundsFromPoints(points);
+  return {
+    ...shape,
+    ...bounds,
+    props: {
+      ...shape.props,
+      points,
+    },
+  };
+}
+
 export function buildLinePath(points: LinePoint[]): string {
   if (points.length < 2) return "";
   return points
     .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
     .join(" ");
+}
+
+export function buildFreehandPath(points: LinePoint[]): string {
+  if (points.length < 2) return "";
+  if (points.length === 2) return buildLinePath(points);
+
+  const [first, second, ...rest] = points;
+  let path = `M ${first.x} ${first.y} Q ${first.x} ${first.y} ${(first.x + second.x) / 2} ${(first.y + second.y) / 2}`;
+
+  let prev = second;
+  for (const point of rest) {
+    const midX = (prev.x + point.x) / 2;
+    const midY = (prev.y + point.y) / 2;
+    path += ` Q ${prev.x} ${prev.y} ${midX} ${midY}`;
+    prev = point;
+  }
+
+  path += ` Q ${prev.x} ${prev.y} ${prev.x} ${prev.y}`;
+  return path;
 }
 
 export function projectPointOnSegment(
@@ -172,6 +221,58 @@ export function translateLinePoints(
     y: point.y + dy,
   }));
   return syncShapeFromLinePoints(shape, points);
+}
+
+export function translatePathPoints(shape: Shape, dx: number, dy: number): Shape {
+  const points = getShapePathPoints(shape).map((point) => ({
+    x: point.x + dx,
+    y: point.y + dy,
+  }));
+  return syncShapeFromPathPoints(shape, points);
+}
+
+export function simplifyPathPoints(
+  points: LinePoint[],
+  tolerance = 1.5,
+): LinePoint[] {
+  if (points.length <= 2) return points;
+
+  function perpendicularDistance(point: LinePoint, start: LinePoint, end: LinePoint) {
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    if (dx === 0 && dy === 0) {
+      return Math.hypot(point.x - start.x, point.y - start.y);
+    }
+    return Math.abs(dy * point.x - dx * point.y + end.x * start.y - end.y * start.x) /
+      Math.hypot(dx, dy);
+  }
+
+  function reduce(segment: LinePoint[]): LinePoint[] {
+    if (segment.length <= 2) return segment;
+
+    let maxDistance = 0;
+    let index = 0;
+    const start = segment[0];
+    const end = segment[segment.length - 1];
+
+    for (let i = 1; i < segment.length - 1; i += 1) {
+      const distance = perpendicularDistance(segment[i], start, end);
+      if (distance > maxDistance) {
+        index = i;
+        maxDistance = distance;
+      }
+    }
+
+    if (maxDistance <= tolerance) {
+      return [start, end];
+    }
+
+    const left = reduce(segment.slice(0, index + 1));
+    const right = reduce(segment.slice(index));
+    return [...left.slice(0, -1), ...right];
+  }
+
+  return reduce(points);
 }
 
 export function normalizeLineCreateBounds(

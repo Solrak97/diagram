@@ -3,3 +3,4 @@ export * from "./serialize.js";
 export * from "./registry.js";
 export * from "./operations.js";
 export * from "./geometry.js";
+export * from "./pages.js";

@@ -149,6 +149,22 @@ export const builtinShapes: ShapeTypeDefinition[] = [
     defaultStyle: { ...DEFAULT_STYLE, fill: "transparent", stroke: "transparent" },
   }),
   defineShape({
+    type: "freehand",
+    label: "Freehand",
+    category: "annotation",
+    description: "Vector freehand stroke",
+    defaultWidth: 120,
+    defaultHeight: 80,
+    ports: [{ id: "center", x: 0.5, y: 0.5 }],
+    defaultProps: { points: [] },
+    defaultStyle: {
+      ...DEFAULT_STYLE,
+      fill: "transparent",
+      stroke: "#1e293b",
+      strokeWidth: 3,
+    },
+  }),
+  defineShape({
     type: "server",
     label: "Server",
     category: "tech",

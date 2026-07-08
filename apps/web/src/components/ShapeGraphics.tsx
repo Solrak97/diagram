@@ -1,9 +1,12 @@
 import type { Shape } from "@diagram/core";
 import {
+  buildFreehandPath,
   buildLinePath,
   getLinePathPoints,
   getLineStrokeDasharray,
+  getShapePathPoints,
   isHorizontalLine,
+  isFreehandShape,
   isLineShape,
 } from "../utils/lines";
 
@@ -724,6 +727,20 @@ export function ShapeGraphics({
     case "arrow-line":
       body = renderArrowLine(shape, style);
       break;
+    case "freehand":
+      body = (
+        <path
+          className="shape-line"
+          d={buildFreehandPath(getShapePathPoints(shape))}
+          fill="none"
+          stroke={style.stroke}
+          strokeWidth={style.strokeWidth ?? 3}
+          opacity={style.opacity}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      );
+      break;
     default:
       body = (
         <rect
@@ -742,6 +759,7 @@ export function ShapeGraphics({
   const hideDefaultLabel =
     shape.type === "uml-seq-participant" ||
     isLineShape(shape.type) ||
+    isFreehandShape(shape.type) ||
     shape.type === "uml-seq-activation";
 
   return (

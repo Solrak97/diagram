@@ -18,9 +18,11 @@ import {
   getDisplayDocument,
 } from "../utils/display";
 import {
+  buildFreehandPath,
   getLinePathPoints,
   isLineShape,
   normalizeLineCreateBounds,
+  simplifyPathPoints,
   type LinePoint,
 } from "../utils/lines";
 import { LinePivotHandles } from "./LinePivotHandles";
@@ -33,6 +35,7 @@ const DRAG_THRESHOLD_PX = 4;
 interface DiagramCanvasProps {
   document: DiagramDocument;
   registry?: ShapeRegistry;
+  showGrid?: boolean;
   tool: EditorTool;
   activeShapeType: string;
   selectedShapeIds: string[];
@@ -52,6 +55,7 @@ interface DiagramCanvasProps {
     bounds: { x: number; y: number; width: number; height: number },
     type: string,
   ) => void;
+  onCreateFreehand: (points: LinePoint[]) => void;
   onConnectPick: (shapeId: string, portId?: string) => void;
   onEditLabel: (shapeId: string) => void;
   onUpdateLinePoints: (shapeId: string, points: LinePoint[]) => void;
@@ -65,6 +69,7 @@ export const DiagramCanvas = forwardRef<SVGSVGElement, DiagramCanvasProps>(
     {
       document,
       registry = defaultShapeRegistry,
+      showGrid = false,
       tool,
       activeShapeType,
       selectedShapeIds,
@@ -78,6 +83,7 @@ export const DiagramCanvas = forwardRef<SVGSVGElement, DiagramCanvasProps>(
       onResizeShape,
       onPan,
       onCreateShape,
+      onCreateFreehand,
       onConnectPick,
       onEditLabel,
       onUpdateLinePoints,
@@ -170,6 +176,32 @@ export const DiagramCanvas = forwardRef<SVGSVGElement, DiagramCanvasProps>(
         );
       }
       onCreateShape(bounds, shapeType);
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
+  function startFreehandDraw(event: React.MouseEvent) {
+    const start = toDiagram(event.clientX, event.clientY);
+    let points: LinePoint[] = [start];
+    setInteraction({ kind: "freehand", points });
+
+    const onMove = (moveEvent: MouseEvent) => {
+      const current = toDiagram(moveEvent.clientX, moveEvent.clientY);
+      const previous = points[points.length - 1];
+      if (Math.hypot(current.x - previous.x, current.y - previous.y) < 2 / viewport.zoom) {
+        return;
+      }
+      points = [...points, current];
+      setInteraction({ kind: "freehand", points });
+    };
+
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      setInteraction(null);
+      onCreateFreehand(simplifyPathPoints(points, 1.2 / viewport.zoom));
     };
 
     window.addEventListener("mousemove", onMove);
@@ -379,6 +411,11 @@ export const DiagramCanvas = forwardRef<SVGSVGElement, DiagramCanvasProps>(
 
     if (tool === "shape" || tool === "text") {
       startCreateDrag(event);
+      return;
+    }
+
+    if (tool === "draw") {
+      startFreehandDraw(event);
     }
   }
 
@@ -396,6 +433,9 @@ export const DiagramCanvas = forwardRef<SVGSVGElement, DiagramCanvasProps>(
           registry,
         )
       : null;
+
+  const freehandPreview =
+    interaction?.kind === "freehand" ? interaction.points : null;
 
   const marqueeBounds =
     interaction?.kind === "marquee" ? interaction.bounds : null;
@@ -423,6 +463,8 @@ export const DiagramCanvas = forwardRef<SVGSVGElement, DiagramCanvasProps>(
       ? "cursor-pan"
       : tool === "shape" || tool === "text"
         ? "cursor-crosshair"
+        : tool === "draw"
+        ? "cursor-crosshair"
         : tool === "connect"
           ? "cursor-connect"
           : tool === "multiselect"
@@ -431,8 +473,33 @@ export const DiagramCanvas = forwardRef<SVGSVGElement, DiagramCanvasProps>(
 
   return (
     <svg ref={setSvgRef} className={`diagram-canvas ${cursorClass}`}>
+      <defs>
+        <pattern
+          id="diagram-grid"
+          width={20}
+          height={20}
+          patternUnits="userSpaceOnUse"
+        >
+          <path
+            d="M 20 0 L 0 0 0 20"
+            fill="none"
+            stroke="#e2e8f0"
+            strokeWidth={1}
+          />
+        </pattern>
+      </defs>
       <rect width="100%" height="100%" fill="transparent" pointerEvents="none" />
       <g transform={transform}>
+        {showGrid ? (
+          <rect
+            x={-10000}
+            y={-10000}
+            width={20000}
+            height={20000}
+            fill="url(#diagram-grid)"
+            pointerEvents="none"
+          />
+        ) : null}
         <rect
           x={-10000}
           y={-10000}
@@ -512,6 +579,19 @@ export const DiagramCanvas = forwardRef<SVGSVGElement, DiagramCanvasProps>(
               );
             })()
           : null}
+
+        {freehandPreview && freehandPreview.length > 1 ? (
+          <path
+            d={buildFreehandPath(freehandPreview)}
+            fill="none"
+            stroke="#1e293b"
+            strokeWidth={3}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            opacity={0.72}
+            pointerEvents="none"
+          />
+        ) : null}
 
         {[...displayShapes]
           .sort((a, b) => a.zIndex - b.zIndex)

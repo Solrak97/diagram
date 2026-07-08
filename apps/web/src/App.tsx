@@ -11,6 +11,13 @@ import {
   updateShape,
   updateViewport,
   touchDocument,
+  addPage,
+  duplicatePage,
+  mutateActivePage,
+  normalizeDocument,
+  removePage,
+  renamePage,
+  setActivePage,
 } from "@diagram/core";
 import "@diagram/shapes";
 import { palettePanels } from "@diagram/shapes";
@@ -19,8 +26,11 @@ import { DiagramCanvas } from "./components/DiagramCanvas";
 import { ShapePalette } from "./components/ShapePalette";
 import { Toolbar } from "./components/Toolbar";
 import { LineFormatBar } from "./components/LineFormatBar";
-import type { ExportAction } from "./components/ExportMenu";
+import { MenuBar, type MenuItem } from "./components/MenuBar";
+import { PageTabs } from "./components/PageTabs";
+import type { ExportAction } from "./components/Toolbar";
 import type { EditorTool, PendingConnection } from "./types/editor";
+import { ToolbarTitle } from "./components/ToolbarTitle";
 import { useDiagramHistory } from "./hooks/useDiagramHistory";
 import {
   diagramToClient,
@@ -38,6 +48,7 @@ import {
 import {
   type DocumentSource,
   fetchLibraryDiagram,
+  fetchLibraryManifest,
   isBlankDocument,
   readDiagramFile,
 } from "./utils/load";
@@ -47,12 +58,15 @@ import {
   getLinePathPoints,
   initializeLineShapePoints,
   insertPivotAtPoint,
+  isPointPathShape,
   isLineShape,
   removePivotAtIndex,
   syncShapeFromLinePoints,
+  syncShapeFromPathPoints,
   type LinePoint,
   type LineStyle,
   translateLinePoints,
+  translatePathPoints,
 } from "./utils/lines";
 import {
   loadStoredDocument,
@@ -69,15 +83,38 @@ function loadInitialDocument(): DiagramDocument {
 
 export function App() {
   const {
-    document,
+    document: rawDocument,
     canUndo,
     canRedo,
-    mutate,
-    mutateViewport,
+    mutate: historyMutate,
     replaceDocument,
     undo,
     redo,
   } = useDiagramHistory(loadStoredDocument() ?? loadInitialDocument());
+  const document = useMemo(
+    () => normalizeDocument(rawDocument),
+    [rawDocument],
+  );
+  const mutate = useCallback(
+    (
+      updater: (current: DiagramDocument) => DiagramDocument,
+      options?: { recordHistory?: boolean },
+    ) => {
+      historyMutate(
+        (current) => mutateActivePage(current, updater),
+        options,
+      );
+    },
+    [historyMutate],
+  );
+  const mutateViewport = useCallback(
+    (updater: (current: DiagramDocument) => DiagramDocument) => {
+      historyMutate((current) => mutateActivePage(current, updater), {
+        recordHistory: false,
+      });
+    },
+    [historyMutate],
+  );
   const [documentSource, setDocumentSource] = useState<DocumentSource | null>(
     () => loadStoredSource(),
   );
@@ -98,6 +135,9 @@ export function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const fileInputModeRef = useRef<"open" | "import">("open");
   const [exportBusy, setExportBusy] = useState(false);
+  const [showPalette, setShowPalette] = useState(true);
+  const [showGrid, setShowGrid] = useState(true);
+  const [library, setLibrary] = useState<LibraryDiagramEntry[]>([]);
   const [selectedLinePivotIndex, setSelectedLinePivotIndex] = useState<
     number | null
   >(null);
@@ -106,19 +146,29 @@ export function App() {
     setSelectedLinePivotIndex(null);
   }, [selectedShapeIds]);
 
+  useEffect(() => {
+    void fetchLibraryManifest()
+      .then((manifest) => setLibrary(manifest.diagrams))
+      .catch(() => setLibrary([]));
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelectedShapeIds([]);
+    setSelectedConnectionId(null);
+    setPendingConnection(null);
+    setEditingShapeId(null);
+    setSelectedLinePivotIndex(null);
+  }, []);
+
   const applyDocument = useCallback(
     (next: DiagramDocument, source: DocumentSource | null) => {
-      replaceDocument(next);
+      replaceDocument(normalizeDocument(next));
       setDocumentSource(source);
-      setSelectedShapeIds([]);
-      setSelectedConnectionId(null);
-      setPendingConnection(null);
-      setEditingShapeId(null);
-      setSelectedLinePivotIndex(null);
-      saveStoredDocument(next);
+      clearSelection();
+      saveStoredDocument(normalizeDocument(next));
       saveStoredSource(source);
     },
-    [replaceDocument],
+    [clearSelection, replaceDocument],
   );
 
   useEffect(() => {
@@ -399,6 +449,39 @@ export function App() {
     [mutate],
   );
 
+  const handleCreateFreehand = useCallback(
+    (points: LinePoint[]) => {
+      if (points.length < 2) return;
+
+      mutate((current) => {
+        let next = addShape(current, defaultShapeRegistry, {
+          type: "freehand",
+          x: points[0].x,
+          y: points[0].y,
+          width: 1,
+          height: 1,
+          label: undefined,
+        });
+        const created = next.shapes[next.shapes.length - 1];
+        if (!created) return next;
+
+        const finalized = syncShapeFromPathPoints(created, points);
+        next = {
+          ...next,
+          shapes: next.shapes.map((shape) =>
+            shape.id === created.id ? finalized : shape,
+          ),
+        };
+        setSelectedShapeIds([created.id]);
+        setSelectedLinePivotIndex(null);
+        return next;
+      });
+
+      setTool("select");
+    },
+    [mutate],
+  );
+
   const handleUpdateLinePoints = useCallback(
     (shapeId: string, points: LinePoint[]) => {
       mutate((current) => {
@@ -556,6 +639,237 @@ export function App() {
     [importIntoDocument],
   );
 
+  const handleNew = useCallback(() => {
+    applyDocument(createEmptyDiagram(), null);
+  }, [applyDocument]);
+
+  const handleSelectAll = useCallback(() => {
+    setSelectedShapeIds(document.shapes.map((shape) => shape.id));
+    setSelectedConnectionId(null);
+  }, [document.shapes]);
+
+  const handleSelectPage = useCallback(
+    (pageId: string) => {
+      if (pageId === document.activePageId) return;
+      mutate((current) => setActivePage(current, pageId));
+      clearSelection();
+    },
+    [clearSelection, document.activePageId, mutate],
+  );
+
+  const handleAddPage = useCallback(() => {
+    mutate((current) => addPage(current));
+    clearSelection();
+  }, [clearSelection, mutate]);
+
+  const handleRenamePage = useCallback(
+    (pageId: string, name: string) => {
+      mutate((current) => renamePage(current, pageId, name));
+    },
+    [mutate],
+  );
+
+  const handleDuplicatePage = useCallback(
+    (pageId: string) => {
+      mutate((current) => duplicatePage(current, pageId));
+      clearSelection();
+    },
+    [clearSelection, mutate],
+  );
+
+  const handleRemovePage = useCallback(
+    (pageId: string) => {
+      mutate((current) => removePage(current, pageId));
+      clearSelection();
+    },
+    [clearSelection, mutate],
+  );
+
+  const libraryMenuItems: MenuItem[] = library.map((entry) => ({
+    id: `library-open-${entry.path}`,
+    label: entry.title,
+    onSelect: () => {
+      void handleOpenLibrary(entry);
+    },
+  }));
+
+  const libraryImportItems: MenuItem[] = library.map((entry) => ({
+    id: `library-import-${entry.path}`,
+    label: entry.title,
+    onSelect: () => {
+      void handleImportLibrary(entry);
+    },
+  }));
+
+  const menuBarItems = useMemo(
+    () => [
+      {
+        id: "file",
+        label: "File",
+        items: [
+          {
+            id: "new",
+            label: "New",
+            shortcut: "⌘N",
+            onSelect: handleNew,
+          },
+          {
+            id: "open-file",
+            label: "Open…",
+            shortcut: "⌘O",
+            disabled: fileBusy,
+            onSelect: handleOpenFile,
+          },
+          ...libraryMenuItems,
+          { id: "sep-open", label: "", separator: true },
+          {
+            id: "import-file",
+            label: "Import…",
+            disabled: fileBusy,
+            onSelect: handleImportFile,
+          },
+          ...libraryImportItems,
+          { id: "sep-export", label: "", separator: true },
+          {
+            id: "export-yaml",
+            label: "Export as YAML",
+            disabled: exportBusy,
+            onSelect: () => void handleExport("yaml"),
+          },
+          {
+            id: "export-json",
+            label: "Export as JSON",
+            disabled: exportBusy,
+            onSelect: () => void handleExport("json"),
+          },
+          {
+            id: "export-png",
+            label: "Export as PNG",
+            disabled: exportBusy,
+            onSelect: () => void handleExport("png"),
+          },
+          {
+            id: "export-jpeg",
+            label: "Export as JPEG",
+            disabled: exportBusy,
+            onSelect: () => void handleExport("jpeg"),
+          },
+        ] satisfies MenuItem[],
+      },
+      {
+        id: "edit",
+        label: "Edit",
+        items: [
+          {
+            id: "undo",
+            label: "Undo",
+            shortcut: "⌘Z",
+            disabled: !canUndo,
+            onSelect: undo,
+          },
+          {
+            id: "redo",
+            label: "Redo",
+            shortcut: "⌘⇧Z",
+            disabled: !canRedo,
+            onSelect: redo,
+          },
+          { id: "sep-edit", label: "", separator: true },
+          {
+            id: "delete",
+            label: "Delete",
+            shortcut: "Del",
+            disabled:
+              selectedShapeIds.length === 0 && !selectedConnectionId,
+            onSelect: handleDelete,
+          },
+          {
+            id: "select-all",
+            label: "Select all",
+            shortcut: "⌘A",
+            disabled: document.shapes.length === 0,
+            onSelect: handleSelectAll,
+          },
+          {
+            id: "deselect",
+            label: "Deselect all",
+            shortcut: "Esc",
+            disabled:
+              selectedShapeIds.length === 0 && !selectedConnectionId,
+            onSelect: clearSelection,
+          },
+        ] satisfies MenuItem[],
+      },
+      {
+        id: "view",
+        label: "View",
+        items: [
+          {
+            id: "zoom-in",
+            label: "Zoom in",
+            shortcut: "+",
+            onSelect: handleZoomIn,
+          },
+          {
+            id: "zoom-out",
+            label: "Zoom out",
+            shortcut: "-",
+            onSelect: handleZoomOut,
+          },
+          {
+            id: "zoom-reset",
+            label: "Reset zoom",
+            shortcut: "0",
+            onSelect: handleZoomReset,
+          },
+          { id: "sep-view", label: "", separator: true },
+          {
+            id: "toggle-palette",
+            label: "Shape library",
+            checked: showPalette,
+            onSelect: () => setShowPalette((value) => !value),
+          },
+          {
+            id: "toggle-grid",
+            label: "Grid",
+            checked: showGrid,
+            onSelect: () => setShowGrid((value) => !value),
+          },
+        ] satisfies MenuItem[],
+      },
+    ],
+    [
+      canRedo,
+      canUndo,
+      clearSelection,
+      document.shapes.length,
+      fileBusy,
+      exportBusy,
+      handleDelete,
+      handleExport,
+      handleImportFile,
+      handleImportLibrary,
+      handleNew,
+      handleOpenFile,
+      handleOpenLibrary,
+      handleSelectAll,
+      handleZoomIn,
+      handleZoomOut,
+      handleZoomReset,
+      libraryImportItems,
+      libraryMenuItems,
+      redo,
+      selectedConnectionId,
+      selectedShapeIds.length,
+      showGrid,
+      showPalette,
+      undo,
+    ],
+  );
+
+  const pages = document.pages ?? [];
+  const activePageId = document.activePageId ?? pages[0]?.id ?? "";
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const target = event.target as HTMLElement;
@@ -580,20 +894,34 @@ export function App() {
         return;
       }
 
+      if (mod && key === "a") {
+        event.preventDefault();
+        handleSelectAll();
+        return;
+      }
+      if (mod && key === "n") {
+        event.preventDefault();
+        handleNew();
+        return;
+      }
+      if (mod && key === "o") {
+        event.preventDefault();
+        handleOpenFile();
+        return;
+      }
+
       if (key === "v") setTool("select");
       if (key === "m") setTool("multiselect");
       if (key === "h") setTool("pan");
       if (key === "s") setTool("shape");
+      if (key === "d") setTool("draw");
       if (key === "t") setTool("text");
       if (key === "c") {
         setTool("connect");
         setPendingConnection(null);
       }
       if (key === "escape") {
-        setPendingConnection(null);
-        setEditingShapeId(null);
-        setSelectedShapeIds([]);
-        setSelectedConnectionId(null);
+        clearSelection();
       }
       if (key === "delete" || key === "backspace") {
         event.preventDefault();
@@ -615,7 +943,18 @@ export function App() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleDelete, handleZoomIn, handleZoomOut, handleZoomReset, redo, undo]);
+  }, [
+    clearSelection,
+    handleDelete,
+    handleNew,
+    handleOpenFile,
+    handleSelectAll,
+    handleZoomIn,
+    handleZoomOut,
+    handleZoomReset,
+    redo,
+    undo,
+  ]);
 
   useEffect(() => {
     const area = canvasAreaRef.current;
@@ -681,16 +1020,18 @@ export function App() {
   }, [document.viewport, editingShape]);
 
   return (
-    <div className="app">
-      <ShapePalette
-        panels={palettePanels}
-        registry={defaultShapeRegistry}
-        activeShapeType={activeShapeType}
-        tool={tool}
-        onSelectShapeType={setActiveShapeType}
-        onArmShapeTool={() => setTool("shape")}
-        onArmTextTool={() => setTool("text")}
-      />
+    <div className={`app${showPalette ? "" : " palette-hidden"}`}>
+      {showPalette ? (
+        <ShapePalette
+          panels={palettePanels}
+          registry={defaultShapeRegistry}
+          activeShapeType={activeShapeType}
+          tool={tool}
+          onSelectShapeType={setActiveShapeType}
+          onArmShapeTool={() => setTool("shape")}
+          onArmTextTool={() => setTool("text")}
+        />
+      ) : null}
 
       <main className="canvas-shell" ref={canvasShellRef}>
         <input
@@ -701,17 +1042,41 @@ export function App() {
           onChange={handleFileInputChange}
         />
 
+        <header className="editor-header">
+          <ToolbarTitle
+            title={document.metadata.title}
+            onChange={(title) => {
+              mutate((current) =>
+                touchDocument({
+                  ...current,
+                  metadata: { ...current.metadata, title },
+                }),
+              );
+            }}
+          />
+          <MenuBar items={menuBarItems} />
+          <span className="editor-header-status">
+            {document.shapes.length} shapes · {document.connections.length}{" "}
+            connections
+            {documentSource?.label ? ` · ${documentSource.label}` : ""}
+            {multiSelectCount > 1
+              ? ` · ${multiSelectCount} selected`
+              : selectedShape?.label
+                ? ` · ${selectedShape.label}`
+                : selectedConnection?.label
+                  ? ` · ${selectedConnection.label}`
+                  : pendingConnection
+                    ? " · pick target"
+                    : ""}
+          </span>
+        </header>
+
         <Toolbar
           tool={tool}
           onToolChange={(next) => {
             setTool(next);
             if (next !== "connect") setPendingConnection(null);
           }}
-          onOpenFile={handleOpenFile}
-          onOpenLibrary={handleOpenLibrary}
-          onImportFile={handleImportFile}
-          onImportLibrary={handleImportLibrary}
-          fileBusy={fileBusy}
           onZoomIn={handleZoomIn}
           onZoomOut={handleZoomOut}
           onZoomReset={handleZoomReset}
@@ -719,28 +1084,7 @@ export function App() {
           onRedo={redo}
           canUndo={canUndo}
           canRedo={canRedo}
-          onExport={handleExport}
-          exportBusy={exportBusy}
           zoom={document.viewport.zoom}
-          shapeCount={document.shapes.length}
-          connectionCount={document.connections.length}
-          title={document.metadata.title}
-          onTitleChange={(title) => {
-            mutate((current) =>
-              touchDocument({
-                ...current,
-                metadata: { ...current.metadata, title },
-              }),
-            );
-          }}
-          sourceLabel={documentSource?.label}
-          selectionLabel={
-            multiSelectCount > 1
-              ? `${multiSelectCount} shapes selected`
-              : (selectedShape?.label ??
-                selectedConnection?.label ??
-                (pendingConnection ? "pick target shape" : undefined))
-          }
           lineFormatControls={
             selectedLineShape ? (
               <LineFormatBar
@@ -755,6 +1099,7 @@ export function App() {
           <DiagramCanvas
             ref={canvasSvgRef}
             document={document}
+            showGrid={showGrid}
             tool={tool}
             activeShapeType={activeShapeType}
             selectedShapeIds={selectedShapeIds}
@@ -771,6 +1116,18 @@ export function App() {
                   const dx = x - shape.x;
                   const dy = y - shape.y;
                   const next = translateLinePoints({ ...shape, x, y }, dx, dy);
+                  return updateShape(current, id, {
+                    x: next.x,
+                    y: next.y,
+                    width: next.width,
+                    height: next.height,
+                    props: next.props,
+                  });
+                }
+                if (isPointPathShape(shape.type)) {
+                  const dx = x - shape.x;
+                  const dy = y - shape.y;
+                  const next = translatePathPoints({ ...shape, x, y }, dx, dy);
                   return updateShape(current, id, {
                     x: next.x,
                     y: next.y,
@@ -803,6 +1160,22 @@ export function App() {
                       props: next.props,
                     });
                   }
+                  if (isPointPathShape(shape.type)) {
+                    const dx = update.x - shape.x;
+                    const dy = update.y - shape.y;
+                    const next = translatePathPoints(
+                      { ...shape, x: update.x, y: update.y },
+                      dx,
+                      dy,
+                    );
+                    return updateShape(doc, update.id, {
+                      x: next.x,
+                      y: next.y,
+                      width: next.width,
+                      height: next.height,
+                      props: next.props,
+                    });
+                  }
                   return updateShape(doc, update.id, {
                     x: update.x,
                     y: update.y,
@@ -817,6 +1190,7 @@ export function App() {
               mutateViewport((current) => updateViewport(current, { x, y }));
             }}
             onCreateShape={handleCreateShape}
+            onCreateFreehand={handleCreateFreehand}
             onConnectPick={handleConnectPick}
             onEditLabel={(shapeId) => {
               const shape = document.shapes.find((item) => item.id === shapeId);
@@ -845,6 +1219,18 @@ export function App() {
             />
           ) : null}
         </div>
+
+        {pages.length > 0 && activePageId ? (
+          <PageTabs
+            pages={pages}
+            activePageId={activePageId}
+            onSelectPage={handleSelectPage}
+            onAddPage={handleAddPage}
+            onRenamePage={handleRenamePage}
+            onDuplicatePage={handleDuplicatePage}
+            onRemovePage={handleRemovePage}
+          />
+        ) : null}
       </main>
     </div>
   );

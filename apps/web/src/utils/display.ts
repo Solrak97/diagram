@@ -2,9 +2,12 @@ import type { DiagramDocument, Shape, ShapeRegistry } from "@diagram/core";
 import type { InteractionState } from "../types/editor";
 import {
   initializeLineShapePoints,
+  isPointPathShape,
   isLineShape,
   syncShapeFromLinePoints,
+  syncShapeFromPathPoints,
   translateLinePoints,
+  translatePathPoints,
 } from "./lines";
 
 export interface Bounds {
@@ -33,6 +36,13 @@ export function applyInteraction(
           dy,
         );
       }
+      if (isPointPathShape(shape.type)) {
+        return translatePathPoints(
+          { ...shape, x: interaction.x, y: interaction.y },
+          dx,
+          dy,
+        );
+      }
 
       return { ...shape, x: interaction.x, y: interaction.y };
     });
@@ -52,6 +62,13 @@ export function applyInteraction(
           dy,
         );
       }
+      if (isPointPathShape(shape.type)) {
+        return translatePathPoints(
+          { ...shape, x: position.x, y: position.y },
+          dx,
+          dy,
+        );
+      }
 
       return { ...shape, x: position.x, y: position.y };
     });
@@ -63,6 +80,33 @@ export function applyInteraction(
         ? syncShapeFromLinePoints(shape, interaction.points)
         : shape,
     );
+  }
+
+  if (interaction.kind === "freehand") {
+    return [
+      ...shapes,
+      syncShapeFromPathPoints(
+        {
+          id: "__preview__",
+          type: "freehand",
+          x: 0,
+          y: 0,
+          width: 1,
+          height: 1,
+          rotation: 0,
+          zIndex: 9999,
+          props: {},
+          style: {
+            fill: "transparent",
+            stroke: "#1e293b",
+            strokeWidth: 3,
+          },
+          metadata: {},
+          locked: true,
+        },
+        interaction.points,
+      ),
+    ];
   }
 
   if (interaction.kind === "resize") {

@@ -74,6 +74,15 @@ export const ViewportSchema = z.object({
   zoom: z.number().positive().default(1),
 });
 
+export const DiagramPageSchema = z.object({
+  id: z.string(),
+  name: z.string().default("Page-1"),
+  shapes: z.array(ShapeSchema).default([]),
+  connections: z.array(ConnectionSchema).default([]),
+  groups: z.array(GroupSchema).default([]),
+  viewport: ViewportSchema.default({}),
+});
+
 export const DiagramMetadataSchema = z.object({
   title: z.string().default("Untitled diagram"),
   description: z.string().optional(),
@@ -85,6 +94,8 @@ export const DiagramMetadataSchema = z.object({
 export const DiagramDocumentSchema = z.object({
   version: z.literal("1"),
   metadata: DiagramMetadataSchema.default({}),
+  pages: z.array(DiagramPageSchema).optional(),
+  activePageId: z.string().optional(),
   shapes: z.array(ShapeSchema).default([]),
   connections: z.array(ConnectionSchema).default([]),
   groups: z.array(GroupSchema).default([]),
@@ -100,6 +111,7 @@ export type ConnectionEndpoint = z.infer<typeof ConnectionEndpointSchema>;
 export type Connection = z.infer<typeof ConnectionSchema>;
 export type Group = z.infer<typeof GroupSchema>;
 export type Viewport = z.infer<typeof ViewportSchema>;
+export type DiagramPage = z.infer<typeof DiagramPageSchema>;
 export type DiagramMetadata = z.infer<typeof DiagramMetadataSchema>;
 export type DiagramDocument = z.infer<typeof DiagramDocumentSchema>;
 

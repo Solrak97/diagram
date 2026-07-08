@@ -358,15 +358,229 @@ textarea {
   overflow: hidden;
 }
 
+.app.palette-hidden {
+  grid-template-columns: 1fr;
+}
+
+.editor-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.35rem 0.75rem;
+  background: #ffffff;
+  border-bottom: 1px solid #cbd5e1;
+  min-width: 0;
+}
+
+.editor-header .toolbar-title,
+.editor-header .toolbar-title-input {
+  max-width: 180px;
+  flex-shrink: 0;
+}
+
+.editor-header-status {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menubar {
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.menubar-anchor {
+  position: relative;
+}
+
+.menubar-trigger {
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.85rem;
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.menubar-trigger:hover,
+.menubar-trigger.active {
+  background: #f1f5f9;
+}
+
+.menubar-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 220px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  padding: 0.35rem 0;
+  z-index: 30;
+}
+
+.menubar-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.45rem 0.85rem;
+  background: transparent;
+  border: none;
+  text-align: left;
+  font-size: 0.85rem;
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.menubar-item:hover:not(:disabled) {
+  background: #f1f5f9;
+}
+
+.menubar-item:disabled {
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.menubar-item-shortcut {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.menubar-separator {
+  height: 1px;
+  margin: 0.35rem 0;
+  background: #e2e8f0;
+}
+
+.page-tabs-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 0.25rem;
+  padding: 0 0.5rem;
+  background: #ffffff;
+  border-top: 1px solid #cbd5e1;
+  min-height: 34px;
+}
+
+.page-tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 0.15rem;
+  overflow-x: auto;
+  min-width: 0;
+}
+
+.page-tab {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: #f8fafc;
+}
+
+.page-tab.active {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  margin-top: -1px;
+  padding-top: 1px;
+}
+
+.page-tab-button {
+  background: transparent;
+  border: none;
+  padding: 0.35rem 0.5rem 0.35rem 0.65rem;
+  font-size: 0.8rem;
+  color: #334155;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.page-tab-menu-trigger {
+  background: transparent;
+  border: none;
+  padding: 0 0.35rem;
+  font-size: 0.85rem;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.page-tab-rename {
+  width: 110px;
+  margin: 0.2rem 0.35rem;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid #0ea5e9;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.page-tab-menu {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  min-width: 140px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  padding: 0.35rem 0;
+  z-index: 20;
+}
+
+.page-tab-menu button {
+  display: block;
+  width: 100%;
+  padding: 0.45rem 0.75rem;
+  background: transparent;
+  border: none;
+  text-align: left;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.page-tab-menu button:hover:not(:disabled) {
+  background: #f1f5f9;
+}
+
+.page-tab-menu button:disabled {
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.page-tab-add {
+  flex-shrink: 0;
+  align-self: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #334155;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.page-tab-add:hover {
+  background: #f8fafc;
+}
+
 .canvas-area {
   position: relative;
   flex: 1;
   min-height: 0;
   overflow: hidden;
-  background:
-    linear-gradient(#e2e8f0 1px, transparent 1px) 0 0 / 20px 20px,
-    linear-gradient(90deg, #e2e8f0 1px, transparent 1px) 0 0 / 20px 20px,
-    #f8fafc;
+  background: #f8fafc;
 }
 
 .diagram-canvas {
